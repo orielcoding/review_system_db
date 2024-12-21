@@ -160,7 +160,7 @@ def delete_review(review_id: int) -> bool:
     return True
 
 
-def syndicate_stores(source_store_id: int, target_store_id: int) -> bool:  # TODO: correct the function - understand the requirements
+def syndicate_stores(source_store_id: int, target_store_id: int) -> bool | int:  # TODO: correct the function - understand the requirements
     """
     Syndicate reviews from source_store_id to target_store_id according to syndication rules.
     The target store is the client's store. The source store is the store that the client
@@ -200,7 +200,7 @@ def syndicate_stores(source_store_id: int, target_store_id: int) -> bool:  # TOD
     if source_store_organization != target_store_organization:
         logging.info(f'Attempted to syndicate reviews from different organizations and failed.')
         print('Stores are not in the same organization')
-        return False
+        return None
 
     # add row in syndicate table
     cursor.execute("""
@@ -218,11 +218,6 @@ def get_reviews(store_id: int) -> list:
     Note: currently, it returns only the review content, but it can be extended to return rating and request time.
     :param store_id - the target store from which a client want to extract reviews.
     """
-
-    # examine clients' token to verify the store he belongs to.
-    if not credentials_check(target_store_id, token):  # TODO: separate concerns
-        print('stores are not in the same organization')
-        return []
 
     # check all source stores that syndicate to the target store
     cursor.execute("""
