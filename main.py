@@ -1,16 +1,14 @@
 import datetime
-import random
-from typing import Any
-
 import mysql.connector
 import json
 import logging
 from DTOs_definitions import CreateReviewRequest, UpdateReviewRequest
+from db_interactions import checkStoreId
 
 with open('config.json') as f:
     config = json.load(f)
 
-connection = mysql.connector.connect(
+connection = mysql.connector.connect(  # TODO: separate concerns - all db actions in db_interactions.py
     host=config['host'],
     user=config['user'],
     password=config['password'],
@@ -18,7 +16,7 @@ connection = mysql.connector.connect(
 )
 cursor = connection.cursor()
 
-# create logging file of the update - the old data and the new data
+# create logging file for create, update, delete and get functions altogether.
 logging.basicConfig(filename=f'review_reports.log', level=logging.INFO)  # can be further improved
 
 
@@ -162,20 +160,107 @@ def delete_review(review_id: int) -> bool:
     return True
 
 
-def get_reviews(store_id: int) -> list:
-    """
-    return all reviews for a given store including syndicated reviews according to syndication rules.
-    """
-    pass
-
-
-def syndicate_stores(source_store_id: int, target_store_id: int) -> bool:
+def syndicate_stores(source_store_id: int, target_store_id: int) -> bool:  # TODO: correct the function - understand the requirements
     """
     Syndicate reviews from source_store_id to target_store_id according to syndication rules.
     The target store is the client's store. The source store is the store that the client
     wants to syndicate reviews from.
     """
-    pass
+
+    # check if source_store_id exists
+    checkStoreId(source_store_id)
+    if not cursor.fetchone():
+        logging.info(f'Attempted to syndicate reviews from non existing source store id: {source_store_id} and failed.')
+        print('Source store id does not exist')
+        return False
+
+    # check if target_store_id exists
+    checkStoreId(target_store_id)
+    if not cursor.fetchone():
+        logging.info(f'Attempted to syndicate reviews to non existing target store id: {target_store_id} and failed.')
+        print('Target store id does not exist')
+        return False
+
+    # check source and target store organization
+    cursor.execute("""
+    SELECT organization_token
+    FROM stores
+    WHERE store_id = %s
+    """, (source_store_id,))
+    source_store_organization = cursor.fetchone()
+
+    cursor.execute("""
+    SELECT organization_token
+    FROM stores
+    WHERE store_id = %s
+    """, (target_store_id,))
+    target_store_organization = cursor.fetchone()
+
+    # check if source and target store belong to the same organization
+    if source_store_organization != target_store_organization:
+        logging.info(f'Attempted to syndicate reviews from different organizations and failed.')
+        print('Stores are not in the same organization')
+        return False
+
+    # add row in syndicate table
+    cursor.execute("""
+    INSERT INTO syndicate (source_store_id, target_store_id)
+    VALUES (%s, %s)
+    """, (source_store_id, target_store_id))
+
+    logging.info(f'Successfully syndicated reviews from source store id: {source_store_id} to target store id: {target_store_id}.')
+    return True
+
+
+def get_reviews(store_id: int) -> list:
+    """
+    Return target store reviews and all the reviews whose their store syndicated to the target store.
+    Note: currently, it returns only the review content, but it can be extended to return rating and request time.
+    :param store_id - the target store from which a client want to extract reviews.
+    """
+
+    # examine clients' token to verify the store he belongs to.
+    if not credentials_check(target_store_id, token):  # TODO: separate concerns
+        print('stores are not in the same organization')
+        return []
+
+    # check all source stores that syndicate to the target store
+    cursor.execute("""
+    SELECT source_store_id
+    FROM syndicate
+    WHERE target_store_id = %s
+    """, (store_id,))
+    source_stores_id = cursor.fetchall()
+
+    # get reviews contents alone from the target store - not including any database access
+    reviews = []
+    # get reviuews from target store
+    cursor.execute("""
+    SELECT review_content
+    FROM reviews
+    WHERE store_id = %s
+    """, store_id)
+    rows = cursor.fetchall()
+    # the rows are tuples. add the data to reviews as json string
+    reviews.extend([row[0] for row in rows])
+
+    logging.info(f'Getting reviews from target store id: {store_id}')  # here I can add more advanced logging
+
+    # get reviews from source stores
+    for source_store_id in source_stores_id:
+        syndicate_stores(source_store_id, store_id)
+        cursor.execute("""
+        SELECT review_content
+        FROM reviews
+        WHERE store_id = %s
+        """, source_store_id)
+
+        logging.info(f'Getting reviews from source store id: {source_store_id}')  # here I can add more advanced logging
+
+        rows = cursor.fetchall()
+        reviews.extend([row[0] for row in rows])
+
+    return reviews
 
 
 def main():

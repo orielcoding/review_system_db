@@ -19,6 +19,6 @@ if __name__ == '__main__':
 
     cursor.execute("""CREATE TABLE stores (to fill)""")  # store_id, store_name, organization token
 
-    cursor.execute("""CREATE TABLE syndicate (to fill)""")  # define relationship between stores in organization
-
     cursor.execute("""CREATE TABLE stores_reviews (to fill)""")  # foreign key to reviews and stores
+
+    cursor.execute("""CREATE TABLE syndication (to fill)""")  # source_store_id, target_store_id
